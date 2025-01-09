@@ -6,7 +6,7 @@ const fields = std.meta.fields;
 const TokenTypeTag = enum { illegal, eof, ident, int, assign, plus, comma, semicolon, lparen, rparen, lbrace, rbrace, function, let };
 
 const TokenType = union(TokenTypeTag) {
-    illegal: void,
+    illegal: u8,
     eof: void,
     ident: []const u8,
     int: []const u8,
@@ -77,8 +77,8 @@ pub const Lexer = struct {
 
     fn parse_number_literal(self: *Self) Token {
         const start_idx: u8 = self.read_position;
-        while (self.peak()) |_| {
-            switch (self.input[self.read_position]) {
+        while (self.has_next()) {
+            switch (self.next()) {
                 '0'...'9' => {
                     self.read_position += 1;
                 },
@@ -182,10 +182,11 @@ pub const Lexer = struct {
                 else => {
                     if (!is_whitespace(current_char)) {
                         try self.output.append(.{
-                            .token_type = TokenType.illegal,
+                            .token_type = TokenType{ .illegal = self.input[self.read_position] },
                             .position = self.read_position,
                         });
                     }
+                    self.read_position += 1;
                 },
             }
         }

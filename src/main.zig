@@ -5,7 +5,7 @@ const general_allocator = std.heap.GeneralPurposeAllocator;
 pub fn main() !void {
     var gpa = general_allocator(.{}){};
 
-    const test_str = "=+()bruce{},;";
+    const test_str = "let x = 10;";
     var lexer = root.Lexer.init(test_str, gpa.allocator());
     defer lexer.free();
     const result = try lexer.tokenize();
