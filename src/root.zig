@@ -68,18 +68,11 @@ pub const Lexer = struct {
         }
     }
 
-    fn is_whitespace(input: u8) bool {
-        return switch (input) {
-            ' ' | '\t' | '\n' | '\r' => true,
-            else => false,
-        };
-    }
-
     fn parse_number_literal(self: *Self) Token {
         const start_idx: u8 = self.read_position;
         while (self.has_next()) {
             switch (self.next()) {
-                '0'...'9' => {
+                48...57 => {
                     self.read_position += 1;
                 },
                 else => break,
@@ -178,14 +171,13 @@ pub const Lexer = struct {
                     self.read_position += 1;
                 },
                 'A'...'Z', 'a'...'z' => try self.output.append(self.parse_string_literal()),
-                '0'...'9' => try self.output.append(self.parse_number_literal()),
+                48...57 => try self.output.append(self.parse_number_literal()),
+                ' ', '\t', '\n', '\r' => self.read_position += 1,
                 else => {
-                    if (!is_whitespace(current_char)) {
-                        try self.output.append(.{
-                            .token_type = TokenType{ .illegal = self.input[self.read_position] },
-                            .position = self.read_position,
-                        });
-                    }
+                    try self.output.append(.{
+                        .token_type = TokenType{ .illegal = self.input[self.read_position] },
+                        .position = self.read_position,
+                    });
                     self.read_position += 1;
                 },
             }
