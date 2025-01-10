@@ -1,17 +1,25 @@
 const std = @import("std");
 const root = @import("root.zig");
 const general_allocator = std.heap.GeneralPurposeAllocator;
+const ArrayList = std.ArrayList;
 
 pub fn main() !void {
     var gpa = general_allocator(.{}){};
 
-    const test_str = "let x = 10; let y = 5;";
-    var lexer = root.Lexer.init(test_str, gpa.allocator());
-    defer lexer.free();
+    const stdin = std.io.getStdIn().reader();
+    const stdout = std.io.getStdOut().writer();
+
+    var user_input: ArrayList(u8) = ArrayList(u8).init(gpa.allocator());
+
+    try stdout.print("Enter: ", .{});
+    try stdin.streamUntilDelimiter(user_input.writer(), '\n', null);
+
+    var lexer = try root.Lexer.init(&user_input, gpa.allocator());
+    defer lexer.deinit();
+
     const result = try lexer.tokenize();
-    std.debug.print("testing: {s}\n", .{test_str});
+
     for (result) |res| {
         std.debug.print("{}\n", .{res});
     }
-    std.debug.print("{c}", .{114});
 }
