@@ -2,16 +2,18 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const EnumMap = std.enums.EnumMap;
+const ascii = std.ascii;
 
 pub const Lexer = struct {
     const Self = @This();
+    const char = u8;
 
     /// Represents the different Token types.
     pub const TokenTypeTag = enum { illegal, eof, bind, plus, comma, semicolon, lparen, rparen, lbrace, rbrace, function, let, expression };
 
     /// Attaches a payload to each Token tag type as appropriate.
     pub const TokenType = union(TokenTypeTag) {
-        illegal: u8,
+        illegal: char,
         eof: void,
         bind: void,
         plus: void,
@@ -23,13 +25,13 @@ pub const Lexer = struct {
         rbrace: void,
         function: void,
         let: void,
-        expression: []const u8,
+        expression: []const char,
     };
 
     /// A token, its type, its payload if relevent, and its position.
     pub const Token = struct {
         token_type: TokenType,
-        position: u8,
+        position: char,
     };
 
     /// The state of the lexer, as determined by each character in the input string.
@@ -42,11 +44,11 @@ pub const Lexer = struct {
 
     output: ArrayList(Token),
     state: State,
-    input: []const u8,
+    input: []const char,
     allocator: Allocator,
 
-    /// Takes ownership of a `toOwnedSlice` of u8s, freeing them and the output with `.free()`.
-    pub fn init(input: *ArrayList(u8), alloc: Allocator) Allocator.Error!Self {
+    /// Takes ownership of a `toOwnedSlice` of chars, freeing them and the output with `.free()`.
+    pub fn init(input: *ArrayList(char), alloc: Allocator) Allocator.Error!Self {
         return .{
             .state = State.illegal,
             .input = try input.toOwnedSlice(),
@@ -61,30 +63,32 @@ pub const Lexer = struct {
         self.allocator.free(self.input);
     }
 
-    fn match_expression(input: []const u8) TokenType {
-        if (std.mem.eql(u8, input, "function")) {
+    fn match_expression(input: []const char) TokenType {
+        if (std.mem.eql(char, input, "function")) {
             return TokenType.function;
-        } else if (std.mem.eql(u8, input, "let")) {
+        } else if (std.mem.eql(char, input, "let")) {
             return TokenType.let;
         } else {
             return TokenType{ .expression = input };
         }
     }
 
-    fn change_state(self: *Self, input: u8) void {
-        self.state = switch (input) {
-            'A'...'Z',
-            'a'...'z',
-            '_',
-            '0'...'9',
-            => State.expression,
-            ' ', '\t', '\n', '\r' => State.whitespace,
-            '=', '+', ',', ';', '(', ')', '{', '}' => State.operator,
-            else => State.illegal,
-        };
+    fn change_state(self: *Self, input: char) void {
+        switch (input) {
+            '=', '+', ',', ';', '(', ')', '{', '}' => self.state = State.operator,
+            else => {
+                if (ascii.isWhitespace(input)) {
+                    self.state = State.whitespace;
+                } else if (ascii.isAlphanumeric(input)) {
+                    self.state = State.expression;
+                } else {
+                    self.state = State.illegal;
+                }
+            },
+        }
     }
 
-    fn match_operator(input: u8) TokenType {
+    fn match_operator(input: char) TokenType {
         return switch (input) {
             '=' => TokenType.bind,
             '+' => TokenType.plus,
@@ -98,7 +102,7 @@ pub const Lexer = struct {
         };
     }
 
-    fn parse_buffer(self: *Self, word: []const u8, index: u8) Allocator.Error!void {
+    fn parse_buffer(self: *Self, word: []const char, index: char) Allocator.Error!void {
         if (word.len > 0) {
             const expression_type = match_expression(word);
             try self.output.append(.{
@@ -109,12 +113,16 @@ pub const Lexer = struct {
     }
 
     /// Produces a slice of Tokens, giving ownership to the caller. Can fail.
-    pub fn tokenize(self: *Self) Allocator.Error![]Token {
-        var buffer: ArrayList(u8) = ArrayList(u8).init(self.allocator);
+    pub fn tokenize(self: *Self) ![]Token {
+        var buffer: ArrayList(char) = ArrayList(char).init(self.allocator);
         defer buffer.deinit();
 
         for (self.input, 0..self.input.len) |current_char, index| {
-            const cast_index: u8 = @intCast(index);
+            if (!ascii.isASCII(current_char)) {
+                return error.InvalidASCII;
+            }
+
+            const cast_index: char = @intCast(index);
             self.change_state(current_char);
             try switch (self.state) {
                 State.whitespace => {
@@ -141,7 +149,7 @@ pub const Lexer = struct {
             };
         }
 
-        const cast_index: u8 = @intCast(self.input.len);
+        const cast_index: char = @intCast(self.input.len);
         const buff = try buffer.toOwnedSlice();
 
         defer self.allocator.free(buff);

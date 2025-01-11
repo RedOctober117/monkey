@@ -14,6 +14,7 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
 
     var user_input: ArrayList(u8) = ArrayList(u8).init(gpa.allocator());
+    defer user_input.deinit();
 
     try stdout.print("Enter: ", .{});
     try stdin.streamUntilDelimiter(user_input.writer(), '\n', null);
