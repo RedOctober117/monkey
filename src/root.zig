@@ -40,13 +40,13 @@ pub const Lexer = struct {
         illegal,
     };
 
+    output: ArrayList(Token),
     state: State,
     input: []const u8,
-    output: ArrayList(Token),
     allocator: Allocator,
 
     /// Takes ownership of a `toOwnedSlice` of u8s, freeing them and the output with `.free()`.
-    pub fn init(input: *ArrayList(u8), alloc: Allocator) !Self {
+    pub fn init(input: *ArrayList(u8), alloc: Allocator) Allocator.Error!Self {
         return .{
             .state = State.illegal,
             .input = try input.toOwnedSlice(),
@@ -98,7 +98,7 @@ pub const Lexer = struct {
         };
     }
 
-    fn parse_buffer(self: *Self, word: []const u8, index: u8) !void {
+    fn parse_buffer(self: *Self, word: []const u8, index: u8) Allocator.Error!void {
         if (word.len > 0) {
             const expression_type = match_expression(word);
             try self.output.append(.{
@@ -109,7 +109,7 @@ pub const Lexer = struct {
     }
 
     /// Produces a slice of Tokens, giving ownership to the caller. Can fail.
-    pub fn tokenize(self: *Self) ![]Token {
+    pub fn tokenize(self: *Self) Allocator.Error![]Token {
         var buffer: ArrayList(u8) = ArrayList(u8).init(self.allocator);
         defer buffer.deinit();
 
@@ -140,9 +140,10 @@ pub const Lexer = struct {
                 },
             };
         }
-        const cast_index: u8 = @intCast(self.input.len);
 
+        const cast_index: u8 = @intCast(self.input.len);
         const buff = try buffer.toOwnedSlice();
+
         defer self.allocator.free(buff);
 
         try self.parse_buffer(buff, cast_index);
