@@ -45,6 +45,7 @@ pub const Lexer = struct {
     output: ArrayList(Token),
     allocator: Allocator,
 
+    /// Takes ownership of a `toOwnedSlice` of u8s, freeing them and the output with `.free()`.
     pub fn init(input: *ArrayList(u8), alloc: Allocator) !Self {
         return .{
             .state = State.illegal,
@@ -54,8 +55,10 @@ pub const Lexer = struct {
         };
     }
 
+    /// Frees the output ArrayList and the input Slice.
     pub fn deinit(self: *Self) void {
         self.output.deinit();
+        self.allocator.free(self.input);
     }
 
     fn match_expression(input: []const u8) TokenType {
@@ -105,6 +108,7 @@ pub const Lexer = struct {
         }
     }
 
+    /// Produces a slice of Tokens, giving ownership to the caller. Can fail.
     pub fn tokenize(self: *Self) ![]Token {
         var buffer: ArrayList(u8) = ArrayList(u8).init(self.allocator);
         defer buffer.deinit();
@@ -114,21 +118,34 @@ pub const Lexer = struct {
             self.change_state(current_char);
             try switch (self.state) {
                 State.whitespace => {
-                    try self.parse_buffer(try buffer.toOwnedSlice(), cast_index);
+                    const buff = try buffer.toOwnedSlice();
+                    defer self.allocator.free(buff);
+
+                    try self.parse_buffer(buff, cast_index);
                 },
                 State.expression => buffer.append(current_char),
                 State.illegal => {
-                    try self.parse_buffer(try buffer.toOwnedSlice(), cast_index);
+                    const buff = try buffer.toOwnedSlice();
+                    defer self.allocator.free(buff);
+
+                    try self.parse_buffer(buff, cast_index);
                     try self.output.append(.{ .token_type = TokenType{ .illegal = current_char }, .position = cast_index });
                 },
                 State.operator => {
-                    try self.parse_buffer(try buffer.toOwnedSlice(), cast_index);
+                    const buff = try buffer.toOwnedSlice();
+                    defer self.allocator.free(buff);
+
+                    try self.parse_buffer(buff, cast_index);
                     try self.output.append(.{ .token_type = match_operator(current_char), .position = cast_index });
                 },
             };
         }
         const cast_index: u8 = @intCast(self.input.len);
-        try self.parse_buffer(try buffer.toOwnedSlice(), cast_index);
+
+        const buff = try buffer.toOwnedSlice();
+        defer self.allocator.free(buff);
+
+        try self.parse_buffer(buff, cast_index);
         try self.output.append(.{
             .token_type = TokenType.eof,
             .position = cast_index,
