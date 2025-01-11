@@ -7,10 +7,10 @@ pub const Lexer = struct {
     const Self = @This();
 
     /// Represents the different Token types.
-    const TokenTypeTag = enum { illegal, eof, bind, plus, comma, semicolon, lparen, rparen, lbrace, rbrace, function, let, expression };
+    pub const TokenTypeTag = enum { illegal, eof, bind, plus, comma, semicolon, lparen, rparen, lbrace, rbrace, function, let, expression };
 
     /// Attaches a payload to each Token tag type as appropriate.
-    const TokenType = union(TokenTypeTag) {
+    pub const TokenType = union(TokenTypeTag) {
         illegal: u8,
         eof: void,
         bind: void,
@@ -27,7 +27,7 @@ pub const Lexer = struct {
     };
 
     /// A token, its type, its payload if relevent, and its position.
-    const Token = struct {
+    pub const Token = struct {
         token_type: TokenType,
         position: u8,
     };
