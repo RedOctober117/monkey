@@ -6,6 +6,7 @@ const general_allocator = std.heap.GeneralPurposeAllocator;
 const ArrayList = std.ArrayList;
 const TokenType = root.Lexer.TokenType;
 const Token = root.Lexer.Token;
+const StaticStringMap = std.static_string_map.StaticStringMap;
 
 pub fn main() !void {
     var gpa = general_allocator(.{}){};

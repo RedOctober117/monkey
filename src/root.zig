@@ -3,6 +3,7 @@ const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const EnumMap = std.enums.EnumMap;
 const ascii = std.ascii;
+const StaticStringMap = std.static_string_map.StaticStringMap;
 
 pub const Lexer = struct {
     const Self = @This();
@@ -13,7 +14,7 @@ pub const Lexer = struct {
 
     /// Attaches a payload to each Token tag type as appropriate.
     pub const TokenType = union(TokenTypeTag) {
-        illegal: char,
+        illegal: []const char,
         eof: void,
         bind: void,
         plus: void,
@@ -63,16 +64,6 @@ pub const Lexer = struct {
         self.allocator.free(self.input);
     }
 
-    fn match_expression(input: []const char) TokenType {
-        if (std.mem.eql(char, input, "function")) {
-            return TokenType.function;
-        } else if (std.mem.eql(char, input, "let")) {
-            return TokenType.let;
-        } else {
-            return TokenType{ .expression = input };
-        }
-    }
-
     fn change_state(self: *Self, input: char) void {
         switch (input) {
             '=', '+', ',', ';', '(', ')', '{', '}' => self.state = State.operator,
@@ -88,25 +79,27 @@ pub const Lexer = struct {
         }
     }
 
-    fn match_operator(input: char) TokenType {
-        return switch (input) {
-            '=' => TokenType.bind,
-            '+' => TokenType.plus,
-            ',' => TokenType.comma,
-            ';' => TokenType.semicolon,
-            '(' => TokenType.lparen,
-            ')' => TokenType.rparen,
-            '{' => TokenType.lbrace,
-            '}' => TokenType.rbrace,
-            else => TokenType{ .illegal = input },
-        };
-    }
+    const expression_map = StaticStringMap(TokenType).initComptime(.{
+        .{ "function", TokenType.function },
+        .{ "let", TokenType.let },
+    });
+
+    const operator_map = StaticStringMap(TokenType).initComptime(.{
+        .{ "=", TokenType.bind },
+        .{ "+", TokenType.plus },
+        .{ ",", TokenType.comma },
+        .{ ";", TokenType.semicolon },
+        .{ "(", TokenType.lparen },
+        .{ ")", TokenType.rparen },
+        .{ "{", TokenType.lbrace },
+        .{ "}", TokenType.rbrace },
+    });
 
     fn parse_buffer(self: *Self, word: []const char, index: char) Allocator.Error!void {
         if (word.len > 0) {
-            const expression_type = match_expression(word);
+            const expression_type = expression_map.get(word);
             try self.output.append(.{
-                .token_type = expression_type,
+                .token_type = if (expression_type != null) expression_type.? else TokenType{ .expression = word },
                 .position = @intCast(index - word.len),
             });
         }
@@ -137,14 +130,15 @@ pub const Lexer = struct {
                     defer self.allocator.free(buff);
 
                     try self.parse_buffer(buff, cast_index);
-                    try self.output.append(.{ .token_type = TokenType{ .illegal = current_char }, .position = cast_index });
+                    try self.output.append(.{ .token_type = TokenType{ .illegal = &.{current_char} }, .position = cast_index });
                 },
                 State.operator => {
                     const buff = try buffer.toOwnedSlice();
                     defer self.allocator.free(buff);
 
                     try self.parse_buffer(buff, cast_index);
-                    try self.output.append(.{ .token_type = match_operator(current_char), .position = cast_index });
+                    const tok_type = operator_map.get(&.{current_char});
+                    try self.output.append(.{ .token_type = if (tok_type != null) tok_type.? else TokenType{ .illegal = &.{current_char} }, .position = cast_index });
                 },
             };
         }
