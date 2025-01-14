@@ -62,7 +62,6 @@ test "check mem leaks" {
     defer lexer.deinit();
 
     const result = try lexer.tokenize();
-    defer test_allocator.free(result);
 
     // try testing.expectEqualSlices(Token, &expected_arr, result);
     for (result, expected_arr) |actual, expected| {
@@ -90,7 +89,6 @@ test "operator matching" {
     defer lexer.deinit();
 
     const result = try lexer.tokenize();
-    defer test_allocator.free(result);
 
     for (result, expected_arr) |actual, expected| {
         try testing.expect(@intFromEnum(actual.token_type) == @intFromEnum(expected.token_type));
