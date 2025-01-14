@@ -1,6 +1,7 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const EnumMap = std.enums.EnumMap;
 const ascii = std.ascii;
 const StaticStringMap = std.static_string_map.StaticStringMap;
@@ -9,12 +10,10 @@ pub const Lexer = struct {
     const Self = @This();
     const char = u8;
 
-    /// Represents the different Token types.
-    pub const TokenTypeTag = enum { illegal, eof, bind, plus, comma, semicolon, lparen, rparen, lbrace, rbrace, function, let, expression };
-
     /// Attaches a payload to each Token tag type as appropriate.
-    pub const TokenType = union(TokenTypeTag) {
+    pub const TokenType = union(enum) {
         illegal: []const char,
+        expression: []const char,
         eof: void,
         bind: void,
         plus: void,
@@ -26,7 +25,16 @@ pub const Lexer = struct {
         rbrace: void,
         function: void,
         let: void,
-        expression: []const char,
+        if_: void,
+        then: void,
+        goto: void,
+        end: void,
+        print: void,
+        lt: void,
+        gt: void,
+        ne: void,
+        gte: void,
+        lte: void,
     };
 
     /// A token, its type, its payload if relevent, and its position.
@@ -45,28 +53,38 @@ pub const Lexer = struct {
 
     output: ArrayList(Token),
     state: State,
-    input: []const char,
-    allocator: Allocator,
+    input: []char,
+    arena: *ArenaAllocator,
 
     /// Takes ownership of a `toOwnedSlice` of chars, freeing them and the output with `.free()`.
     pub fn init(input: *ArrayList(char), alloc: Allocator) Allocator.Error!Self {
+        // this is a pointer to an arena allocator on the stack to preserve the allocator state
+        const arena = try alloc.create(ArenaAllocator);
+        errdefer alloc.destroy(arena);
+
+        arena.* = ArenaAllocator.init(alloc);
+
+        const input_alloc = try arena.allocator().dupe(char, try input.toOwnedSlice());
+        errdefer arena.allocator().free(input_alloc);
+
         return .{
             .state = State.illegal,
-            .input = try input.toOwnedSlice(),
-            .output = ArrayList(Token).init(alloc),
-            .allocator = alloc,
+            .input = input_alloc,
+            .output = ArrayList(Token).init(arena.allocator()),
+            .arena = arena,
         };
     }
 
     /// Frees the output ArrayList and the input Slice.
     pub fn deinit(self: *Self) void {
-        self.output.deinit();
-        self.allocator.free(self.input);
+        const child_alloc = self.arena.child_allocator;
+        self.arena.deinit();
+        child_alloc.destroy(self.arena);
     }
 
     fn change_state(self: *Self, input: char) void {
         switch (input) {
-            '=', '+', ',', ';', '(', ')', '{', '}' => self.state = State.operator,
+            '=', '+', ',', ';', '(', ')', '{', '}', '<', '>' => self.state = State.operator,
             else => {
                 if (ascii.isWhitespace(input)) {
                     self.state = State.whitespace;
@@ -80,8 +98,13 @@ pub const Lexer = struct {
     }
 
     const expression_map = StaticStringMap(TokenType).initComptime(.{
-        .{ "function", TokenType.function },
-        .{ "let", TokenType.let },
+        .{ "FUNCTION", TokenType.function },
+        .{ "LET", TokenType.let },
+        .{ "IF", TokenType.if_ },
+        .{ "THEN", TokenType.then },
+        .{ "GOTO", TokenType.goto },
+        .{ "END", TokenType.end },
+        .{ "PRINT", TokenType.print },
     });
 
     const operator_map = StaticStringMap(TokenType).initComptime(.{
@@ -93,9 +116,14 @@ pub const Lexer = struct {
         .{ ")", TokenType.rparen },
         .{ "{", TokenType.lbrace },
         .{ "}", TokenType.rbrace },
+        .{ "<", TokenType.lt },
+        .{ ">", TokenType.gt },
+        .{ "<>", TokenType.ne },
+        .{ ">=", TokenType.gte },
+        .{ "<=", TokenType.lte },
     });
 
-    fn parse_buffer(self: *Self, word: []const char, index: char) Allocator.Error!void {
+    fn parse_expr_buffer(self: *Self, word: []const char, index: char) Allocator.Error!void {
         if (word.len > 0) {
             const expression_type = expression_map.get(word);
             try self.output.append(.{
@@ -105,10 +133,22 @@ pub const Lexer = struct {
         }
     }
 
+    fn parse_opr_buffer(self: *Self, word: []const char, index: char) Allocator.Error!void {
+        if (word.len > 0) {
+            const operator_type = operator_map.get(word);
+            try self.output.append(.{
+                .token_type = if (operator_type != null) operator_type.? else TokenType{ .illegal = word },
+                .position = @intCast(index - word.len),
+            });
+        }
+    }
+
     /// Produces a slice of Tokens, giving ownership to the caller. Can fail.
     pub fn tokenize(self: *Self) ![]Token {
-        var buffer: ArrayList(char) = ArrayList(char).init(self.allocator);
-        defer buffer.deinit();
+        var expression_buffer: ArrayList(char) = ArrayList(char).init(self.arena.allocator());
+        var operator_buffer: ArrayList(char) = ArrayList(char).init(self.arena.allocator());
+        defer expression_buffer.deinit();
+        defer operator_buffer.deinit();
 
         for (self.input, 0..self.input.len) |current_char, index| {
             if (!ascii.isASCII(current_char)) {
@@ -117,38 +157,65 @@ pub const Lexer = struct {
 
             const cast_index: char = @intCast(index);
             self.change_state(current_char);
-            try switch (self.state) {
-                State.whitespace => {
-                    const buff = try buffer.toOwnedSlice();
-                    defer self.allocator.free(buff);
+            switch (self.state) {
+                // add expr and parse opr
+                State.expression => {
+                    try expression_buffer.append(current_char);
 
-                    try self.parse_buffer(buff, cast_index);
+                    // remember, []T is a pointer to items T
+                    const opr_buff = try self.arena.allocator().dupe(char, try operator_buffer.toOwnedSlice());
+                    errdefer self.arena.allocator().free(opr_buff);
+
+                    try self.parse_opr_buffer(opr_buff, cast_index);
                 },
-                State.expression => buffer.append(current_char),
-                State.illegal => {
-                    const buff = try buffer.toOwnedSlice();
-                    defer self.allocator.free(buff);
 
-                    try self.parse_buffer(buff, cast_index);
+                // add opr and parse expr
+                State.operator => {
+                    try operator_buffer.append(current_char);
+
+                    const expr_buff = try self.arena.allocator().dupe(char, try expression_buffer.toOwnedSlice());
+                    errdefer self.arena.allocator().free(expr_buff);
+                    // defer self.allocator.free(expr_buff);
+
+                    try self.parse_expr_buffer(expr_buff, cast_index);
+                },
+
+                // parse expr and opr=
+                State.whitespace => {
+                    const expr_buff = try self.arena.allocator().dupe(char, try expression_buffer.toOwnedSlice());
+                    const opr_buff = try self.arena.allocator().dupe(char, try operator_buffer.toOwnedSlice());
+                    errdefer self.arena.allocator().free(expr_buff);
+                    errdefer self.arena.allocator().free(opr_buff);
+
+                    try self.parse_expr_buffer(expr_buff, cast_index);
+                    try self.parse_opr_buffer(opr_buff, cast_index);
+                },
+
+                // parse expr and opr, add illegal token
+                State.illegal => {
+                    const expr_buff = try self.arena.allocator().dupe(char, try expression_buffer.toOwnedSlice());
+                    const opr_buff = try self.arena.allocator().dupe(char, try operator_buffer.toOwnedSlice());
+                    errdefer self.arena.allocator().free(expr_buff);
+                    errdefer self.arena.allocator().free(opr_buff);
+
+                    try self.parse_expr_buffer(expr_buff, cast_index);
+                    try self.parse_opr_buffer(opr_buff, cast_index);
+
                     try self.output.append(.{ .token_type = TokenType{ .illegal = &.{current_char} }, .position = cast_index });
                 },
-                State.operator => {
-                    const buff = try buffer.toOwnedSlice();
-                    defer self.allocator.free(buff);
-
-                    try self.parse_buffer(buff, cast_index);
-                    const tok_type = operator_map.get(&.{current_char});
-                    try self.output.append(.{ .token_type = if (tok_type != null) tok_type.? else TokenType{ .illegal = &.{current_char} }, .position = cast_index });
-                },
-            };
+            }
         }
 
         const cast_index: char = @intCast(self.input.len);
-        const buff = try buffer.toOwnedSlice();
 
-        defer self.allocator.free(buff);
+        const expr_buff = try self.arena.allocator().dupe(char, try expression_buffer.toOwnedSlice());
+        const opr_buff = try self.arena.allocator().dupe(char, try operator_buffer.toOwnedSlice());
+        errdefer self.arena.allocator().free(expr_buff);
+        errdefer self.arena.allocator().free(opr_buff);
 
-        try self.parse_buffer(buff, cast_index);
+        try self.parse_expr_buffer(expr_buff, cast_index);
+        try self.parse_opr_buffer(opr_buff, cast_index);
+
         try self.output.append(.{
             .token_type = TokenType.eof,
             .position = cast_index,

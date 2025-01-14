@@ -11,24 +11,43 @@ const StaticStringMap = std.static_string_map.StaticStringMap;
 pub fn main() !void {
     var gpa = general_allocator(.{}){};
 
-    const stdin = std.io.getStdIn().reader();
-    const stdout = std.io.getStdOut().writer();
+    // defer std.debug.assert(!gpa.deinit());
+    const allocator = gpa.allocator();
 
-    var user_input: ArrayList(u8) = ArrayList(u8).init(gpa.allocator());
-    defer user_input.deinit();
+    // var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+    // defer arena.deinit();
 
-    try stdout.print("Enter: ", .{});
-    try stdin.streamUntilDelimiter(user_input.writer(), '\n', null);
+    // const stdin = std.io.getStdIn().reader();
+    // const stdout = std.io.getStdOut().writer();
 
-    var lexer = try root.Lexer.init(&user_input, gpa.allocator());
-    defer lexer.deinit();
+    // var user_input: ArrayList(u8) = ArrayList(u8).init(gpa.allocator());
+    // defer user_input.deinit();
 
-    const result = try lexer.tokenize();
-    defer gpa.allocator().free(result);
+    // try stdout.print("Enter: ", .{});
+    // try stdin.streamUntilDelimiter(user_input.writer(), '\n', null);
 
-    for (result) |res| {
-        try stdout.print("{}\n", .{res});
-    }
+    // var lexer = try root.Lexer.init(&user_input, gpa.allocator());
+    // defer lexer.deinit();
+
+    _ = "A B";
+    var input = ArrayList(u8).init(allocator);
+
+    // try input.insertSlice(0, "LET A=0; LET B=1; PRINT A; 100 PRINT B; LET B=A+B; LET A=B-A; IF B<=1000 THEN GOTO 100; END");
+    try input.append('A');
+    std.debug.print("len: {}\n", .{input.items.len});
+
+    var lexer = try root.Lexer.init(&input, allocator);
+
+    // const result = try lexer.tokenize();
+
+    // for (result) |res| {
+    //     // try stdout.print("{}\n", .{res});
+    //     std.debug.print("{any}\n", .{res});
+    // }
+    lexer.deinit();
+    // input.deinit();
+    _ = &gpa.detectLeaks();
+    _ = gpa.deinit();
 }
 
 test "check mem leaks" {
@@ -42,7 +61,35 @@ test "check mem leaks" {
     };
 
     var test_expr: ArrayList(u8) = ArrayList(u8).init(test_allocator);
-    try test_expr.appendSlice("let x = 10;");
+    try test_expr.appendSlice("LET x = 10;");
+
+    var lexer = try root.Lexer.init(&test_expr, test_allocator);
+    defer lexer.deinit();
+
+    const result = try lexer.tokenize();
+    defer test_allocator.free(result);
+
+    // try testing.expectEqualSlices(Token, &expected_arr, result);
+    for (result, expected_arr) |actual, expected| {
+        try testing.expect(@intFromEnum(actual.token_type) == @intFromEnum(expected.token_type));
+        try testing.expect(actual.position == expected.position);
+    }
+}
+
+test "operator matching" {
+    const expected_arr = [_]Token{
+        Token{ .token_type = TokenType.gte, .position = 0 },
+        Token{ .token_type = TokenType.lte, .position = 3 },
+        Token{ .token_type = TokenType.ne, .position = 6 },
+        Token{ .token_type = TokenType.lt, .position = 9 },
+        Token{ .token_type = TokenType.gt, .position = 11 },
+        Token{ .token_type = TokenType.bind, .position = 13 },
+        Token{ .token_type = TokenType.plus, .position = 15 },
+        Token{ .token_type = TokenType.eof, .position = 16 },
+    };
+
+    var test_expr: ArrayList(u8) = ArrayList(u8).init(test_allocator);
+    try test_expr.appendSlice(">= <= <> < > = +");
 
     var lexer = try root.Lexer.init(&test_expr, test_allocator);
     defer lexer.deinit();
