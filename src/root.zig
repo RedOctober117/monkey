@@ -58,14 +58,17 @@ pub const Lexer = struct {
 
     /// Takes ownership of a `toOwnedSlice` of chars, freeing them and the output with `.free()`.
     pub fn init(input: *ArrayList(char), alloc: Allocator) Allocator.Error!Self {
+        const input_slice = try input.toOwnedSlice();
+        defer alloc.free(input_slice);
+
         // this is a pointer to an arena allocator on the stack to preserve the allocator state
         const arena = try alloc.create(ArenaAllocator);
+        const input_alloc = try alloc.dupe(u8, input_slice);
+
         errdefer alloc.destroy(arena);
+        errdefer alloc.destroy(input_alloc);
 
         arena.* = ArenaAllocator.init(alloc);
-
-        const input_alloc = try arena.allocator().dupe(char, try input.toOwnedSlice());
-        errdefer arena.allocator().free(input_alloc);
 
         return .{
             .state = State.illegal,
@@ -79,6 +82,7 @@ pub const Lexer = struct {
     pub fn deinit(self: *Self) void {
         const child_alloc = self.arena.child_allocator;
         self.arena.deinit();
+        child_alloc.free(self.input);
         child_alloc.destroy(self.arena);
     }
 

@@ -10,8 +10,9 @@ const StaticStringMap = std.static_string_map.StaticStringMap;
 
 pub fn main() !void {
     var gpa = general_allocator(.{}){};
+    defer _ = gpa.deinit();
+    defer _ = &gpa.detectLeaks();
 
-    // defer std.debug.assert(!gpa.deinit());
     const allocator = gpa.allocator();
 
     // var arena = std.heap.ArenaAllocator.init(gpa.allocator());
@@ -29,25 +30,19 @@ pub fn main() !void {
     // var lexer = try root.Lexer.init(&user_input, gpa.allocator());
     // defer lexer.deinit();
 
-    _ = "A B";
     var input = ArrayList(u8).init(allocator);
 
-    // try input.insertSlice(0, "LET A=0; LET B=1; PRINT A; 100 PRINT B; LET B=A+B; LET A=B-A; IF B<=1000 THEN GOTO 100; END");
-    try input.append('A');
-    std.debug.print("len: {}\n", .{input.items.len});
+    try input.insertSlice(0, "LET A=0; LET B=1; PRINT A; 100 PRINT B; LET B=A+B; LET A=B-A; IF B<=1000 THEN GOTO 100; END");
 
     var lexer = try root.Lexer.init(&input, allocator);
+    defer lexer.deinit();
 
-    // const result = try lexer.tokenize();
+    const result = try lexer.tokenize();
 
-    // for (result) |res| {
-    //     // try stdout.print("{}\n", .{res});
-    //     std.debug.print("{any}\n", .{res});
-    // }
-    lexer.deinit();
-    // input.deinit();
-    _ = &gpa.detectLeaks();
-    _ = gpa.deinit();
+    for (result) |res| {
+        // try stdout.print("{}\n", .{res});
+        std.debug.print("{any}\n", .{res});
+    }
 }
 
 test "check mem leaks" {
