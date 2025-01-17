@@ -15,6 +15,19 @@ pub const Lexer = struct {
         illegal: []const char,
         expression: []const char,
         eof: void,
+
+        print: void,
+        if_: void,
+        then: void,
+        goto: void,
+        let: void,
+        gosub: void,
+        return_: void,
+        clear: void,
+        list: void,
+        run: void,
+        end: void,
+
         bind: void,
         plus: void,
         comma: void,
@@ -23,13 +36,6 @@ pub const Lexer = struct {
         rparen: void,
         lbrace: void,
         rbrace: void,
-        function: void,
-        let: void,
-        if_: void,
-        then: void,
-        goto: void,
-        end: void,
-        print: void,
         lt: void,
         gt: void,
         ne: void,
@@ -102,13 +108,17 @@ pub const Lexer = struct {
     }
 
     const expression_map = StaticStringMap(TokenType).initComptime(.{
-        .{ "FUNCTION", TokenType.function },
-        .{ "LET", TokenType.let },
+        .{ "PRINT", TokenType.print },
         .{ "IF", TokenType.if_ },
         .{ "THEN", TokenType.then },
         .{ "GOTO", TokenType.goto },
+        .{ "LET", TokenType.let },
+        .{ "GOSUB", TokenType.gosub },
+        .{ "RETURN", TokenType.return_ },
+        .{ "CLEAR", TokenType.clear },
+        .{ "LIST", TokenType.list },
+        .{ "RUN", TokenType.run },
         .{ "END", TokenType.end },
-        .{ "PRINT", TokenType.print },
     });
 
     const operator_map = StaticStringMap(TokenType).initComptime(.{
